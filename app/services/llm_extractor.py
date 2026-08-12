@@ -78,8 +78,22 @@ class LLMOfferExtractor:
         self.chain = self.prompt | self.structured_model
 
     @staticmethod
+    def _compact(body: str) -> str:
+        # Dealer pages repeat the same disclaimer/nav lines per offer card.
+        # Drop blank and duplicate lines so we keep more unique signal per token.
+        seen: set[str] = set()
+        lines: list[str] = []
+        for raw in body.splitlines():
+            line = raw.strip()
+            if not line or line in seen:
+                continue
+            seen.add(line)
+            lines.append(line)
+        return "\n".join(lines)
+
+    @staticmethod
     def _prepare_body(body: str) -> str:
-        body = body.strip()
+        body = LLMOfferExtractor._compact(body.strip())
         if len(body) <= settings.max_body_chars:
             return body
 
