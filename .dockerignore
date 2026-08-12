@@ -1,0 +1,13 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+storage/offers/*.xlsx
+*.db
+tests/
+.pytest_cache/
+README.md
+DEMO.md

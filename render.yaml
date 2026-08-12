@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: vehicle-offers-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: standard            # Chromium needs RAM; free/starter (512MB) will OOM.
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    # Persistent disk keeps the SQLite DB and generated .xlsx files across deploys.
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PLAYWRIGHT_HEADLESS
+        value: "true"
+      - key: DATABASE_URL
+        value: sqlite:////var/data/vehicle_offers.db
+      - key: LOCAL_STORAGE_DIR
+        value: /var/data/offers
+      # Secrets: leave unset here and add them in the Render dashboard.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SCRAPINGBEE_API_KEY
+        sync: false
+      - key: LOGFIRE_TOKEN
+        sync: false
