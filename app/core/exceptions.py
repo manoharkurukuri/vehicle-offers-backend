@@ -27,6 +27,11 @@ class ExcelGenerationError(AppException):
     code = "excel_generation_failed"
 
 
+class FileStorageError(AppException):
+    status_code = 502
+    code = "file_storage_failed"
+
+
 class DatabaseOperationError(AppException):
     status_code = 500
     code = "database_operation_failed"

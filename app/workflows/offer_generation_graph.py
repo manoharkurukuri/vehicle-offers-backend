@@ -16,6 +16,7 @@ from app.schemas.llm import OfferExtractionResponse, VehicleIncentiveLLM
 from app.services.excel_service import ExcelService
 from app.services.llm_extractor import LLMOfferExtractor
 from app.services.scraper import get_website_content_from_url
+from app.services.storage_service import CloudinaryStorageService
 
 
 class OfferWorkflowState(TypedDict, total=False):
@@ -27,7 +28,8 @@ class OfferWorkflowState(TypedDict, total=False):
     extraction: OfferExtractionResponse
     incentives: list[VehicleIncentiveLLM]
     file_name: str
-    local_file_path: str
+    file_url: str
+    file_public_id: str
     offer_id: UUID
     file_created_date: datetime
     incentive_count: int
@@ -38,6 +40,7 @@ class OfferGenerationWorkflow:
         self.db = db
         self.llm_extractor = LLMOfferExtractor()
         self.excel_service = ExcelService()
+        self.storage = CloudinaryStorageService()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -94,9 +97,15 @@ class OfferGenerationWorkflow:
             incentives=state["incentives"],
             source_url=state["company_url"],
         )
+        # Push to Cloudinary and drop the local copy; only the URL is kept.
+        try:
+            file_url, public_id = self.storage.upload(local_file_path, file_name)
+        finally:
+            Path(local_file_path).unlink(missing_ok=True)
         return {
             "file_name": file_name,
-            "local_file_path": local_file_path,
+            "file_url": file_url,
+            "file_public_id": public_id,
         }
 
     @staticmethod
@@ -107,13 +116,12 @@ class OfferGenerationWorkflow:
 
     def _persist_results(self, state: OfferWorkflowState) -> dict[str, Any]:
         created_at = datetime.now(timezone.utc)
-        local_file_path = Path(state["local_file_path"])
 
         try:
             offer = Offer(
                 company_id=state["company_id"],
                 file_name=state["file_name"],
-                file_url=None,
+                file_url=state["file_url"],
                 file_created_date=created_at,
                 excel_headers=list(EXCEL_HEADERS),
             )
@@ -162,8 +170,8 @@ class OfferGenerationWorkflow:
             }
         except Exception as exc:
             self.db.rollback()
-            if local_file_path.exists():
-                local_file_path.unlink(missing_ok=True)
+            # The workbook already lives on Cloudinary; remove the orphaned asset.
+            self.storage.delete(state["file_public_id"])
             raise DatabaseOperationError(
                 f"Failed to persist offer workbook metadata and rows: {exc}"
             ) from exc

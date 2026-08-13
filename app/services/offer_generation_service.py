@@ -62,7 +62,7 @@ class OfferGenerationService:
                 offer_id=result["offer_id"],
                 company_id=company.id,
                 file_name=result["file_name"],
-                file_url=None,
+                file_url=result.get("file_url"),
                 file_created_date=result["file_created_date"],
                 excel_headers=list(EXCEL_HEADERS),
                 incentive_count=result.get("incentive_count", 0),
