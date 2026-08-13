@@ -1,20 +1,15 @@
-# Official Playwright image ships Chromium + all system libraries it needs.
-FROM mcr.microsoft.com/playwright/python:v1.50.0-jammy
+# Backend no longer runs Playwright — scraping is a separate Lambda image.
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PLAYWRIGHT_HEADLESS=true
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
 # Install Python dependencies first for better layer caching.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# The base image already bundles browsers, but re-run to guarantee the
-# Chromium build matches the installed Playwright version.
-RUN playwright install chromium
 
 COPY . .
 

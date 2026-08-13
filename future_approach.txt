@@ -1,0 +1,35 @@
+                  ┌───────────────────┐
+                  │ vehicle backend   │
+                  └─────────┬─────────┘
+                            │
+                     create jobId
+                            │
+                            ▼
+                     ┌─────────────┐
+                     │     SQS     │
+                     └──────┬──────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ Scraper Lambda│
+                    └───────┬───────┘
+                            │
+                            ▼
+                       Chromium
+                            │
+                            ▼
+                       Website
+                            │
+                            ▼
+                       scraped data
+                            │
+                  ┌─────────┴─────────┐
+                  ▼                   ▼
+             DynamoDB                S3
+             job status          large results
+                  │
+                  ▼
+             Backend reads
+                  │
+                  ▼
+                 LLM

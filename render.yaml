@@ -3,7 +3,7 @@ services:
     name: vehicle-offers-backend
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: standard            # Chromium needs RAM; free/starter (512MB) will OOM.
+    plan: standard            # FastAPI only now; scraping runs in AWS Lambda.
     region: oregon
     healthCheckPath: /health
     autoDeploy: true
@@ -15,8 +15,10 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: PLAYWRIGHT_HEADLESS
-        value: "true"
+      - key: AWS_REGION
+        value: ap-south-2
+      - key: SCRAPER_LAMBDA_NAME
+        value: vehicle_offer_scraper
       - key: DATABASE_URL
         value: sqlite:////var/data/vehicle_offers.db
       - key: LOCAL_STORAGE_DIR
@@ -24,7 +26,9 @@ services:
       # Secrets: leave unset here and add them in the Render dashboard.
       - key: GROQ_API_KEY
         sync: false
-      - key: SCRAPINGBEE_API_KEY
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: LOGFIRE_TOKEN
         sync: false

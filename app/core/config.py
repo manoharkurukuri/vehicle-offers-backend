@@ -23,11 +23,10 @@ class Settings(BaseSettings):
     groq_max_retries: int = 2
     max_body_chars: int = 350_000
 
-    scrapingbee_api_key: SecretStr = SecretStr("")
-    scrapingbee_endpoint: str = "https://app.scrapingbee.com/api/v1/"
-    playwright_headless: bool = False
-    scrape_timeout_seconds: int = 60
-    scrapingbee_timeout_seconds: int = 90
+    # Scraping runs in a dedicated AWS Lambda container image.
+    aws_region: str = "ap-south-2"
+    scraper_lambda_name: str = "vehicle_offer_scraper"
+    scraper_lambda_invoke_timeout: int = 180
 
     model_config = SettingsConfigDict(
         env_file=".env",
