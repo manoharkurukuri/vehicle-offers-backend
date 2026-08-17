@@ -28,12 +28,6 @@ class Settings(BaseSettings):
     scraper_lambda_name: str = "vehicle_offer_scraper"
     scraper_lambda_invoke_timeout: int = 180
 
-    # Generated Excel workbooks are stored on Cloudinary (as raw files).
-    cloudinary_cloud_name: str = ""
-    cloudinary_api_key: SecretStr = SecretStr("")
-    cloudinary_api_secret: SecretStr = SecretStr("")
-    cloudinary_folder: str = "vehicle-offers"
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

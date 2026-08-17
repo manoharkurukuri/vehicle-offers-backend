@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from uuid import UUID
 
+from app.core.config import settings
 from app.core.exceptions import AppException
 from app.db.session import get_db
 from app.models.monthly_vehicle_incentive import MonthlyVehicleIncentive
@@ -13,6 +16,11 @@ from app.services.offer_generation_service import OfferGenerationService
 
 
 router = APIRouter(tags=["offers"])
+
+_XLSX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
 
 
 class OfferNotFoundError(AppException):
@@ -38,6 +46,27 @@ def get_offer(offer_id: UUID, db: Session = Depends(get_db)) -> Offer:
     if offer is None:
         raise OfferNotFoundError(f"Offer id={offer_id} was not found.")
     return offer
+
+
+@router.get("/offers/{offer_id}/download")
+def download_offer_file(
+    offer_id: UUID, db: Session = Depends(get_db)
+) -> FileResponse:
+    offer = db.get(Offer, offer_id)
+    if offer is None:
+        raise OfferNotFoundError(f"Offer id={offer_id} was not found.")
+
+    file_path = Path(settings.local_storage_dir) / offer.file_name
+    if not file_path.is_file():
+        raise OfferNotFoundError(
+            f"Workbook file for offer id={offer_id} is no longer on disk."
+        )
+
+    return FileResponse(
+        path=file_path,
+        filename=offer.file_name,
+        media_type=_XLSX_MEDIA_TYPE,
+    )
 
 
 @router.get("/companies/{company_id}/offers", response_model=list[OfferRead])

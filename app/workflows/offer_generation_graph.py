@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from sqlalchemy.orm import Session
 from typing_extensions import TypedDict
 
+from app.core.config import settings
 from app.core.constants import EXCEL_HEADERS
 from app.core.exceptions import DatabaseOperationError
 from app.models.monthly_vehicle_incentive import MonthlyVehicleIncentive
@@ -16,7 +17,6 @@ from app.schemas.llm import OfferExtractionResponse, VehicleIncentiveLLM
 from app.services.excel_service import ExcelService
 from app.services.llm_extractor import LLMOfferExtractor
 from app.services.scraper import get_website_content_from_url
-from app.services.storage_service import CloudinaryStorageService
 
 
 class OfferWorkflowState(TypedDict, total=False):
@@ -28,8 +28,8 @@ class OfferWorkflowState(TypedDict, total=False):
     extraction: OfferExtractionResponse
     incentives: list[VehicleIncentiveLLM]
     file_name: str
+    file_path: str
     file_url: str
-    file_public_id: str
     offer_id: UUID
     file_created_date: datetime
     incentive_count: int
@@ -40,7 +40,6 @@ class OfferGenerationWorkflow:
         self.db = db
         self.llm_extractor = LLMOfferExtractor()
         self.excel_service = ExcelService()
-        self.storage = CloudinaryStorageService()
         self.graph = self._build_graph()
 
     def _build_graph(self):
@@ -73,9 +72,53 @@ class OfferGenerationWorkflow:
         return {"extraction": extraction}
 
     @staticmethod
+    def _offer_identity(incentive: VehicleIncentiveLLM) -> tuple:
+        """Identity used to detect the same offer repeated by the page/LLM.
+
+        Dealer pages echo one offer across a hero banner, an offer card, a
+        "See details" modal, and its disclaimer, so the LLM can return the same
+        offer several times. Two offers are the same vehicle + same headline terms.
+        """
+
+        def norm(value: Any) -> str | None:
+            if value is None:
+                return None
+            text = str(value).strip().casefold()
+            return text or None
+
+        vin = norm(incentive.vin_number)
+        if vin:
+            return ("vin", vin)
+        stock = norm(incentive.stock_number)
+        if stock:
+            return ("stock", stock)
+        return (
+            "vehicle",
+            incentive.year,
+            norm(incentive.make),
+            norm(incentive.model),
+            norm(incentive.trim),
+            incentive.lowest_monthly_payment,
+            incentive.lease_term_months,
+            incentive.total_due_at_signing,
+            incentive.finance_rate,
+        )
+
+    @staticmethod
     def _normalize_top_five(state: OfferWorkflowState) -> dict[str, Any]:
+        seen: set[tuple] = set()
+        deduped: list[VehicleIncentiveLLM] = []
+        for incentive in state["extraction"].offers:
+            identity = OfferGenerationWorkflow._offer_identity(incentive)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            deduped.append(incentive)
+
+        duplicate_count = len(state["extraction"].offers) - len(deduped)
+
         normalized: list[VehicleIncentiveLLM] = []
-        for index, incentive in enumerate(state["extraction"].offers[:5], start=1):
+        for index, incentive in enumerate(deduped[:5], start=1):
             normalized.append(
                 incentive.model_copy(
                     update={
@@ -85,7 +128,11 @@ class OfferGenerationWorkflow:
                 )
             )
 
-        logfire.info("Offers normalized", offer_count=len(normalized))
+        logfire.info(
+            "Offers normalized",
+            offer_count=len(normalized),
+            duplicates_removed=duplicate_count,
+        )
         return {
             "incentives": normalized,
             "incentive_count": len(normalized),
@@ -97,15 +144,10 @@ class OfferGenerationWorkflow:
             incentives=state["incentives"],
             source_url=state["company_url"],
         )
-        # Push to Cloudinary and drop the local copy; only the URL is kept.
-        try:
-            file_url, public_id = self.storage.upload(local_file_path, file_name)
-        finally:
-            Path(local_file_path).unlink(missing_ok=True)
+        # The workbook stays in the local storage folder and is served on demand.
         return {
             "file_name": file_name,
-            "file_url": file_url,
-            "file_public_id": public_id,
+            "file_path": local_file_path,
         }
 
     @staticmethod
@@ -121,12 +163,12 @@ class OfferGenerationWorkflow:
             offer = Offer(
                 company_id=state["company_id"],
                 file_name=state["file_name"],
-                file_url=state["file_url"],
                 file_created_date=created_at,
                 excel_headers=list(EXCEL_HEADERS),
             )
             self.db.add(offer)
             self.db.flush()
+            offer.file_url = f"{settings.api_v1_prefix}/offers/{offer.id}/download"
 
             for incentive in state["incentives"]:
                 row = MonthlyVehicleIncentive(
@@ -166,12 +208,13 @@ class OfferGenerationWorkflow:
             self.db.commit()
             return {
                 "offer_id": offer.id,
+                "file_url": offer.file_url,
                 "file_created_date": created_at,
             }
         except Exception as exc:
             self.db.rollback()
-            # The workbook already lives on Cloudinary; remove the orphaned asset.
-            self.storage.delete(state["file_public_id"])
+            # Remove the orphaned local workbook file.
+            Path(state["file_path"]).unlink(missing_ok=True)
             raise DatabaseOperationError(
                 f"Failed to persist offer workbook metadata and rows: {exc}"
             ) from exc

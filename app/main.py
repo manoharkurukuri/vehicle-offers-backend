@@ -1,9 +1,15 @@
 from contextlib import asynccontextmanager
 
-import logfire
-from fastapi import FastAPI
+from dotenv import load_dotenv
 
-from app.core.config import settings
+# Load .env into the process environment so boto3 (and other SDKs that read
+# os.environ directly, e.g. AWS_ACCESS_KEY_ID) can see the credentials.
+load_dotenv()
+
+import logfire  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+
+from app.core.config import settings  # noqa: E402
 
 # Configure Logfire before importing the application's Pydantic schemas/models.
 logfire.configure(

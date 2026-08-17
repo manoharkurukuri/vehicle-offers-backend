@@ -15,6 +15,7 @@ class ScrapingError(Exception):
     """Raised when the page cannot be scraped (bot wall, empty body, etc.)."""
 
 
+
 _BLOCK_MARKERS = (
     "working to keep your website experience safe",
     "attention required",

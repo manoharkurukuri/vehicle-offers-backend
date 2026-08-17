@@ -16,6 +16,27 @@ from app.core.config import settings
 from app.core.exceptions import ScrapingError
 
 
+# Interstitials some OEM/dealer sites serve to datacenter/bot IPs instead of the
+# real inventory. When we see one, fail loudly instead of extracting 0 offers.
+_BLOCK_PAGE_MARKERS = (
+    "site is currently offline due to maintenance",
+    "site currently not available",
+    "site currently\n        not available",
+    "nicht erreichbar",
+    "access denied",
+    "attention required",
+    "just a moment",
+    "checking your browser",
+    "enable javascript and cookies",
+)
+
+
+def _looks_blocked(body: str) -> bool:
+    lowered = body.lower()
+    return any(marker in lowered for marker in _BLOCK_PAGE_MARKERS)
+
+
+
 def _lambda_client():
     config = Config(
         region_name=settings.aws_region,
@@ -64,6 +85,13 @@ def get_website_content_from_url(url: str) -> dict[str, str]:
     body = content.get("body", "")
     if not body.strip():
         raise ScrapingError("Scraper Lambda returned an empty body.")
+
+    if _looks_blocked(body):
+        raise ScrapingError(
+            "The dealer site served an anti-bot/maintenance page to the scraper "
+            "instead of its inventory, so no offers could be extracted. The site "
+            "is likely blocking the scraper's IP address."
+        )
 
     return {
         "url": content.get("url", url),

@@ -13,8 +13,24 @@ You extract vehicle offers from automobile dealer website text.
 Return structured data matching the provided schema.
 
 Rules:
-1. Extract vehicle offers in the same top-to-bottom order they appear on the website.
-2. Return at most the first 5 offers. If there are 5 or fewer, return all of them.
+1. Extract every DISTINCT vehicle offer you can find on the website.
+   A single offer is often repeated on the page: the hero banner, an offer card,
+   a "See details" modal, and the fine-print disclaimer can all describe the SAME
+   offer. Treat all of those as ONE offer, not several. Two offers are the same
+   when they describe the same vehicle (same year/make/model/trim, or same VIN or
+   stock number) with the same headline terms (same monthly payment, term, and
+   due-at-signing, or the same APR). Never output the same offer more than once.
+2. Return at most the 5 best offers ranked by how attractive they are to a customer.
+   Rank by customer value in this priority order:
+   - Largest discount / savings off MSRP or largest bonus/rebate cash.
+   - Lowest monthly lease/finance payment relative to the vehicle.
+   - Lowest finance APR (e.g. 0.9% APR beats 3.9% APR).
+   - Lowest total due at signing / lowest money down.
+   If there are 5 or fewer offers total, return all of them.
+   When comparing, treat a clearly larger explicit savings amount as the stronger
+   offer. Do not invent or calculate numbers just to rank; only use values the
+   source explicitly provides. If value cannot be compared, fall back to the
+   top-to-bottom order the offers appear on the website.
 3. Never invent a value. If the source does not explicitly provide it, return null.
 4. Offer Type must be one of:
    - Lease Offer
@@ -27,8 +43,11 @@ Rules:
 5. If an offer is fundamentally a lease but contains conquest/loyalty eligibility,
    keep Offer Type as Lease Offer. Use Conquest Offer only when the offer itself is
    a standalone conquest incentive.
-6. If the same vehicle offer explicitly includes both lease and APR/finance terms,
-   use Combined Lease/APR Offer.
+6. If the SAME vehicle is advertised with more than one financing structure
+   (e.g. a lease payment AND an APR AND a bonus cash amount), return it as ONE
+   offer, not one offer per structure. When it explicitly includes both lease and
+   APR/finance terms, use Combined Lease/APR Offer. Only create separate offers
+   for genuinely different vehicles.
 7. Vehicle Type must be one of New, Used, CPO,
    Loaner/Courtesy Vehicle/Nearly New, or null.
 8. For "due at lease signing" or equivalent, use Due at Signing and put the amount
@@ -38,7 +57,13 @@ Rules:
 10. Do not calculate missing values. For example, do not sum incentives and call the
     result Discount Towards MSRP unless the source explicitly identifies an MSRP discount.
 11. If multiple VINs belong to one offer, return them in vin_number as one comma-separated string.
-12. Preserve the offer disclaimer text when available. Do not fabricate disclaimer language.
+12. Every offer has its own disclaimer. Each vehicle typically has a separate
+    fine-print block, often starting with "Vehicle shown for illustration purposes
+    only" or "Closed-end lease available on a <vehicle>". Copy that block verbatim
+    into the disclaimer field for THAT offer. Match each disclaimer to its offer by
+    the vehicle name/VIN mentioned inside the disclaimer. Never leave disclaimer null
+    when a matching disclaimer exists on the page, and never reuse one offer's
+    disclaimer for a different offer. Do not fabricate disclaimer language.
 13. offer_emphasis must be null for now.
 14. Do not treat navigation text, buttons, headings, financing links, or inventory links
     as separate offers.
@@ -71,7 +96,8 @@ class LLMOfferExtractor:
                 (
                     "human",
                     "Dealer website body:\n\n{body}\n\n"
-                    "Extract the first five vehicle offers at most.",
+                    "Extract at most the five best offers for a customer, "
+                    "ranked by highest discount/savings and overall value.",
                 ),
             ]
         )
