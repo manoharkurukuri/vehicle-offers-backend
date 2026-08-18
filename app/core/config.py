@@ -21,6 +21,19 @@ class Settings(BaseSettings):
     ] = "function_calling"
     groq_timeout_seconds: int = 120
     groq_max_retries: int = 2
+
+    # Google Gemini via its OpenAI-compatible endpoint.
+    gemini_api_key: SecretStr = SecretStr("")
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    gemini_timeout_seconds: int = 120
+    gemini_max_retries: int = 2
+    # Cap completion size so long 5-offer outputs don't get truncated mid-JSON.
+    gemini_max_tokens: int = 8000
+
+    # Active LLM provider.
+    llm_provider: Literal["gemini", "groq"] = "gemini"
+
     max_body_chars: int = 350_000
 
     # Scraping runs in a dedicated AWS Lambda container image.

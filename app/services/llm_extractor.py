@@ -1,6 +1,7 @@
 import logfire
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 from app.core.exceptions import ConfigurationError, LLMExtractionError
@@ -67,27 +68,63 @@ Rules:
 13. offer_emphasis must be null for now.
 14. Do not treat navigation text, buttons, headings, financing links, or inventory links
     as separate offers.
+
+OUTPUT FORMAT:
+Return ONLY a single JSON object (no markdown, no prose) with this exact shape:
+{{
+  "offers": [
+    {{
+      "offer_priority": string | null,
+      "offer_type": "Lease Offer" | "Combined Lease/APR Offer" | "Bonus Cash Offer" | "Buy For Offer" | "Finance Offer" | "Bonus Offer" | "Conquest Offer" | null,
+      "offer_emphasis": null,
+      "vehicle_type": "New" | "Used" | "CPO" | "Loaner/Courtesy Vehicle/Nearly New" | null,
+      "year": integer | null,
+      "make": string | null,
+      "model": string | null,
+      "trim": string | null,
+      "drive_train": string | null,
+      "stock_number": string | null,
+      "vin_number": string | null,
+      "msrp": number | null,
+      "lowest_monthly_payment": number | null,
+      "lease_term_months": integer | null,
+      "down_payment_or_due_at_signing": "Down Payment" | "Due at Signing" | null,
+      "down_payment": number | null,
+      "total_due_at_signing": number | null,
+      "annual_mileage": integer | null,
+      "finance_rate": number | null,
+      "finance_term_months": integer | null,
+      "discount_towards_msrp": number | null,
+      "buy_for_price": number | null,
+      "selling_price": number | null,
+      "disclaimer": string | null,
+      "additional_creative_needs": string | null,
+      "impel_model_movers": string | null
+    }}
+  ]
+}}
+Every field must be present on each offer; use null when the source does not
+explicitly provide a value. Numbers must be plain JSON numbers with no "$", ","
+or "%". Return at most five offers.
 """.strip()
 
 
 class LLMOfferExtractor:
     def __init__(self) -> None:
-        api_key = settings.groq_api_key.get_secret_value()
-        if not api_key:
-            raise ConfigurationError(
-                "GROQ_API_KEY is not configured. Add it to the .env file."
-            )
-
-        self.model = ChatGroq(
-            model=settings.groq_model,
-            api_key=api_key,
-            temperature=0,
-            timeout=settings.groq_timeout_seconds,
-            max_retries=settings.groq_max_retries,
+        self.model_name = (
+            settings.gemini_model
+            if settings.llm_provider == "gemini"
+            else settings.groq_model
+        )
+        self.model = self._build_model()
+        method = (
+            "json_mode"
+            if settings.llm_provider == "gemini"
+            else settings.groq_structured_output_method
         )
         self.structured_model = self.model.with_structured_output(
             OfferExtractionResponse,
-            method=settings.groq_structured_output_method,
+            method=method,
             include_raw=True,
         )
         self.prompt = ChatPromptTemplate.from_messages(
@@ -102,6 +139,38 @@ class LLMOfferExtractor:
             ]
         )
         self.chain = self.prompt | self.structured_model
+
+    @staticmethod
+    def _build_model():
+        if settings.llm_provider == "gemini":
+            api_key = settings.gemini_api_key.get_secret_value()
+            if not api_key:
+                raise ConfigurationError(
+                    "GEMINI_API_KEY is not configured. Add it to the .env file."
+                )
+            # Gemini exposes an OpenAI-compatible endpoint.
+            return ChatOpenAI(
+                model=settings.gemini_model,
+                api_key=api_key,
+                base_url=settings.gemini_base_url,
+                temperature=0,
+                timeout=settings.gemini_timeout_seconds,
+                max_retries=settings.gemini_max_retries,
+                max_tokens=settings.gemini_max_tokens,
+            )
+
+        api_key = settings.groq_api_key.get_secret_value()
+        if not api_key:
+            raise ConfigurationError(
+                "GROQ_API_KEY is not configured. Add it to the .env file."
+            )
+        return ChatGroq(
+            model=settings.groq_model,
+            api_key=api_key,
+            temperature=0,
+            timeout=settings.groq_timeout_seconds,
+            max_retries=settings.groq_max_retries,
+        )
 
     @staticmethod
     def _compact(body: str) -> str:
@@ -138,7 +207,7 @@ class LLMOfferExtractor:
 
         with logfire.span(
             "groq structured offer extraction",
-            model=settings.groq_model,
+            model=self.model_name,
             body_chars=len(prepared_body),
         ):
             try:

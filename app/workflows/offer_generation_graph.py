@@ -72,12 +72,17 @@ class OfferGenerationWorkflow:
         return {"extraction": extraction}
 
     @staticmethod
-    def _offer_identity(incentive: VehicleIncentiveLLM) -> tuple:
-        """Identity used to detect the same offer repeated by the page/LLM.
+    def _offer_keys(incentive: VehicleIncentiveLLM) -> list[tuple]:
+        """Identity keys used to detect the same offer repeated by the page/LLM.
 
         Dealer pages echo one offer across a hero banner, an offer card, a
         "See details" modal, and its disclaimer, so the LLM can return the same
-        offer several times. Two offers are the same vehicle + same headline terms.
+        offer several times. The copies do not always agree on identifiers: the
+        hero card may carry no VIN while the disclaimer does. We therefore return
+        every key that can identify the offer (each VIN, the stock number, and the
+        vehicle + headline-terms signature) and treat two offers as the same when
+        they share ANY key, so a VIN-bearing copy still collapses onto a VIN-less
+        copy of the same vehicle and terms.
         """
 
         def norm(value: Any) -> str | None:
@@ -86,33 +91,38 @@ class OfferGenerationWorkflow:
             text = str(value).strip().casefold()
             return text or None
 
+        keys: list[tuple] = []
         vin = norm(incentive.vin_number)
         if vin:
-            return ("vin", vin)
+            # One offer may list several comma-separated VINs.
+            keys.extend(("vin", part.strip()) for part in vin.split(",") if part.strip())
         stock = norm(incentive.stock_number)
         if stock:
-            return ("stock", stock)
-        return (
-            "vehicle",
-            incentive.year,
-            norm(incentive.make),
-            norm(incentive.model),
-            norm(incentive.trim),
-            incentive.lowest_monthly_payment,
-            incentive.lease_term_months,
-            incentive.total_due_at_signing,
-            incentive.finance_rate,
+            keys.append(("stock", stock))
+        keys.append(
+            (
+                "vehicle",
+                incentive.year,
+                norm(incentive.make),
+                norm(incentive.model),
+                norm(incentive.trim),
+                incentive.lowest_monthly_payment,
+                incentive.lease_term_months,
+                incentive.total_due_at_signing,
+                incentive.finance_rate,
+            )
         )
+        return keys
 
     @staticmethod
     def _normalize_top_five(state: OfferWorkflowState) -> dict[str, Any]:
         seen: set[tuple] = set()
         deduped: list[VehicleIncentiveLLM] = []
         for incentive in state["extraction"].offers:
-            identity = OfferGenerationWorkflow._offer_identity(incentive)
-            if identity in seen:
+            keys = OfferGenerationWorkflow._offer_keys(incentive)
+            if any(key in seen for key in keys):
                 continue
-            seen.add(identity)
+            seen.update(keys)
             deduped.append(incentive)
 
         duplicate_count = len(state["extraction"].offers) - len(deduped)

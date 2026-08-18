@@ -26,7 +26,7 @@ class OfferGenerationService:
             company_id=company.id,
             status="running",
             source_url=company.company_url,
-            llm_model=settings.groq_model,
+            llm_model=settings.gemini_model,
         )
         self.db.add(scrape_run)
         self.db.commit()
