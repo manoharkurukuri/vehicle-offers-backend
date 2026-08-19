@@ -121,12 +121,50 @@ def _expand_and_collect_details(page) -> None:
             pass
 
 
+def _collect_iframe_text(page) -> None:
+    """Some dealer specials render inside an <iframe> (third-party incentive
+    widgets). ``page.content()`` only returns the top frame, so the offers never
+    reach the extracted body. Pull each child frame's visible text into the main
+    DOM so it survives ``page.content()`` extraction."""
+    collected: list[str] = []
+    for frame in page.frames:
+        if frame is page.main_frame:
+            continue
+        try:
+            text = frame.evaluate(
+                "() => (document.body ? document.body.innerText : '')"
+            )
+        except Exception:
+            continue
+        if text and text.strip():
+            collected.append(text.strip())
+
+    if not collected:
+        return
+
+    joined = "\n\n".join(dict.fromkeys(collected))
+    try:
+        page.evaluate(
+            "(t) => { const d = document.createElement('div');"
+            " d.setAttribute('data-scraped-iframe','1');"
+            " d.style.display='none'; d.innerText = t;"
+            " document.body.appendChild(d); }",
+            joined,
+        )
+    except Exception:
+        pass
+
+
 def _load_dynamic_content(page) -> None:
     """Give JS-rendered offer widgets time to load and trigger lazy content."""
     try:
         page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
         pass
+
+    # Some dealer pages render a placeholder/feedback form first and swap in the
+    # real offers a few seconds later via a JS timer, so let that swap happen.
+    page.wait_for_timeout(4000)
 
     # Many dealer specials pages lazy-load offer cards on scroll.
     try:
@@ -145,6 +183,9 @@ def _load_dynamic_content(page) -> None:
         page.wait_for_load_state("networkidle", timeout=8000)
     except Exception:
         pass
+
+    # Pull in offers that render inside iframes after everything has settled.
+    _collect_iframe_text(page)
 
 
 def fetch_rendered_html(url: str, timeout: int | None = None) -> str:

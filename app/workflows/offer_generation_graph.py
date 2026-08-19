@@ -62,13 +62,30 @@ class OfferGenerationWorkflow:
     def _scrape_website(state: OfferWorkflowState) -> dict[str, Any]:
         content = get_website_content_from_url(state["company_url"])
         body = content["body"]
+        logfire.info(
+            "Extracted body from HTML content",
+            url=state["company_url"],
+            body_char_count=len(body),
+        )
         return {
             "body": body,
             "body_char_count": len(body),
         }
 
     def _extract_with_llm(self, state: OfferWorkflowState) -> dict[str, Any]:
-        extraction = self.llm_extractor.extract(state["body"])
+        logfire.info(
+            "Sending body to LLM for offer extraction",
+            body_char_count=len(state["body"]),
+        )
+        try:
+            extraction = self.llm_extractor.extract(state["body"])
+        except Exception as exc:
+            logfire.error("LLM failed to generate offer response", error=str(exc))
+            raise
+        logfire.info(
+            "LLM successfully generated offer response",
+            offer_count=len(extraction.offers),
+        )
         return {"extraction": extraction}
 
     @staticmethod
@@ -216,6 +233,12 @@ class OfferGenerationWorkflow:
                 self.db.add(row)
 
             self.db.commit()
+            logfire.info(
+                "Offer data saved to database",
+                offer_id=offer.id,
+                company_id=state["company_id"],
+                incentive_count=len(state["incentives"]),
+            )
             return {
                 "offer_id": offer.id,
                 "file_url": offer.file_url,

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logfire  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 
@@ -44,6 +44,16 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 logfire.instrument_fastapi(app)
 logfire.instrument_sqlalchemy(engine=engine)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logfire.info(
+        "Incoming request",
+        method=request.method,
+        path=request.url.path,
+    )
+    return await call_next(request)
 
 
 @app.get("/health", tags=["health"])

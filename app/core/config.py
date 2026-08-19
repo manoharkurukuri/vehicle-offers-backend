@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     # Scraping runs in a dedicated AWS Lambda container image.
     aws_region: str = "ap-south-2"
     scraper_lambda_name: str = "vehicle_offer_scraper"
-    scraper_lambda_invoke_timeout: int = 180
+    # Keep above the Lambda's own 180s timeout so the client waits it out.
+    scraper_lambda_invoke_timeout: int = 210
 
     model_config = SettingsConfigDict(
         env_file=".env",

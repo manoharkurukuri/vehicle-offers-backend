@@ -12,6 +12,7 @@ this backend, which often succeeds because it runs from a different IP.
 import json
 
 import boto3
+import logfire
 import requests
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
@@ -71,6 +72,12 @@ def _fetch_via_lambda(url: str) -> dict[str, str]:
     """Invoke the scraper Lambda and return the extracted page text."""
     payload = json.dumps({"url": url}).encode("utf-8")
 
+    logfire.info(
+        "Sending URL to scraper Lambda for HTML content",
+        url=url,
+        lambda_name=settings.scraper_lambda_name,
+    )
+
     try:
         response = _lambda_client().invoke(
             FunctionName=settings.scraper_lambda_name,
@@ -112,6 +119,14 @@ def _fetch_via_lambda(url: str) -> dict[str, str]:
             "instead of its inventory, so no offers could be extracted. The site "
             "is likely blocking the scraper's IP address."
         )
+
+    logfire.info(
+        "Content successfully fetched from Lambda",
+        url=url,
+        body_chars=len(body),
+        title=content.get("title", ""),
+        body_preview=body[:3000],
+    )
 
     return {
         "url": content.get("url", url),
@@ -183,6 +198,14 @@ def _fetch_via_http(url: str) -> dict[str, str]:
         )
     if not body.strip():
         raise ScrapingError("Direct HTTP request returned an empty body.")
+
+    logfire.info(
+        "Content successfully fetched via direct HTTP fallback",
+        url=url,
+        body_chars=len(body),
+        title=content.get("title", ""),
+        body_preview=body[:3000],
+    )
     return content
 
 
@@ -191,6 +214,11 @@ def get_website_content_from_url(url: str) -> dict[str, str]:
     try:
         return _fetch_via_lambda(url)
     except ScrapingError as lambda_error:
+        logfire.warning(
+            "Lambda scrape failed, trying direct HTTP fallback",
+            url=url,
+            error=str(lambda_error),
+        )
         try:
             return _fetch_via_http(url)
         except ScrapingError as http_error:

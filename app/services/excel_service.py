@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import logfire
 from openpyxl import Workbook
 from openpyxl.formatting.rule import CellIsRule
 from openpyxl.comments import Comment
@@ -193,6 +194,11 @@ class ExcelService:
 
             workbook.save(temp_path)
             os.replace(temp_path, final_path)
+            logfire.info(
+                "Workbook file saved to storage folder",
+                file_name=file_name,
+                storage_dir=str(self.storage_dir),
+            )
             return file_name, str(final_path)
         except Exception as exc:
             if temp_path.exists():
