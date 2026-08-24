@@ -9,29 +9,27 @@ from app.schemas.llm import OfferExtractionResponse
 
 
 SYSTEM_PROMPT = """
-You extract vehicle offers from automobile dealer website text.
+You extract promotional SALES offers from an automobile dealer website's specials page.
+
+SALES specials are new-vehicle-arrival, used, lease, finance, and cash offers on a
+specific vehicle (year/make/model/trim, monthly payment, APR, due at signing, etc.).
+Extract only SALES offers into the schema below. Ignore service, parts, and
+maintenance coupons (oil changes, brake service, tires, batteries, alignments, wiper
+blades, detailing, multi-point inspections, and parts/accessory discounts); these are
+NOT offers for this task and must never be extracted.
 
 Return structured data matching the provided schema.
 
 Rules:
-1. Extract every DISTINCT vehicle offer you can find on the website.
+1. Extract every DISTINCT sales offer you can find on the website.
    A single offer is often repeated on the page: the hero banner, an offer card,
    a "See details" modal, and the fine-print disclaimer can all describe the SAME
    offer. Treat all of those as ONE offer, not several. Two offers are the same
    when they describe the same vehicle (same year/make/model/trim, or same VIN or
    stock number) with the same headline terms (same monthly payment, term, and
    due-at-signing, or the same APR). Never output the same offer more than once.
-2. Return at most the 5 best offers ranked by how attractive they are to a customer.
-   Rank by customer value in this priority order:
-   - Largest discount / savings off MSRP or largest bonus/rebate cash.
-   - Lowest monthly lease/finance payment relative to the vehicle.
-   - Lowest finance APR (e.g. 0.9% APR beats 3.9% APR).
-   - Lowest total due at signing / lowest money down.
-   If there are 5 or fewer offers total, return all of them.
-   When comparing, treat a clearly larger explicit savings amount as the stronger
-   offer. Do not invent or calculate numbers just to rank; only use values the
-   source explicitly provides. If value cannot be compared, fall back to the
-   top-to-bottom order the offers appear on the website.
+2. Return ALL distinct sales offers on the page. Do not cap or limit the number of
+   offers. Preserve the top-to-bottom order in which the offers appear on the website.
 3. Never invent a value. If the source does not explicitly provide it, return null.
 4. Offer Type must be one of:
    - Lease Offer
@@ -60,14 +58,15 @@ Rules:
 11. If multiple VINs belong to one offer, return them in vin_number as one comma-separated string.
 12. Every offer has its own disclaimer. Each vehicle typically has a separate
     fine-print block, often starting with "Vehicle shown for illustration purposes
-    only" or "Closed-end lease available on a <vehicle>". Copy that block verbatim
-    into the disclaimer field for THAT offer. Match each disclaimer to its offer by
-    the vehicle name/VIN mentioned inside the disclaimer. Never leave disclaimer null
-    when a matching disclaimer exists on the page, and never reuse one offer's
-    disclaimer for a different offer. Do not fabricate disclaimer language.
+    only" or "Closed-end lease available on a <vehicle>".
+    Copy that block verbatim into the disclaimer field for THAT offer. Match each
+    disclaimer to its offer by the vehicle name/VIN mentioned inside
+    the disclaimer. Never leave disclaimer null when a matching disclaimer exists on
+    the page, and never reuse one offer's disclaimer for a different offer. Do not
+    fabricate disclaimer language.
 13. offer_emphasis must be null for now.
-14. Do not treat navigation text, buttons, headings, financing links, or inventory links
-    as separate offers.
+14. Do not treat navigation text, buttons, headings, financing links, or inventory
+    links as offers. Do not treat service/parts/maintenance coupons as offers.
 
 OUTPUT FORMAT:
 Return ONLY a single JSON object (no markdown, no prose) with this exact shape:
@@ -105,7 +104,7 @@ Return ONLY a single JSON object (no markdown, no prose) with this exact shape:
 }}
 Every field must be present on each offer; use null when the source does not
 explicitly provide a value. Numbers must be plain JSON numbers with no "$", ","
-or "%". Return at most five offers.
+or "%". Return every distinct sales offer on the page.
 """.strip()
 
 
@@ -133,8 +132,9 @@ class LLMOfferExtractor:
                 (
                     "human",
                     "Dealer website body:\n\n{body}\n\n"
-                    "Extract at most the five best offers for a customer, "
-                    "ranked by highest discount/savings and overall value.",
+                    "This is a SALES specials page. Extract every distinct sales "
+                    "offer on the page. Ignore any service, parts, or maintenance "
+                    "coupons. Do not limit the number of offers returned.",
                 ),
             ]
         )
