@@ -1,0 +1,54 @@
+name: push image to dockerhub
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore: "*.md"
+  workflow_dispatch:
+    
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: clone the code
+        uses: actions/checkout@v7
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: check python version
+        run: python --version
+
+      - name: Install Linter
+        run: pip install ruff
+
+      - name: check the files for linting
+        run: ruff check .
+
+      - name: Install Dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Start FastAPI Application
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+
+      - name: Test Application
+        run: |
+          for i in {1..15}; do
+            if curl --fail http://127.0.0.1:8000/docs; then
+              echo "Application is running successfully"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Application health check failed"
+          exit 1
+      
+      
+  
+
