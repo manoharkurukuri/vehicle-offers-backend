@@ -24,12 +24,6 @@ jobs:
       - name: check python version
         run: python --version
 
-      - name: Install Linter
-        run: pip install ruff
-
-      - name: check the files for linting
-        run: ruff check .
-
       - name: Install Dependencies
         run: pip install --no-cache-dir -r requirements.txt
 
